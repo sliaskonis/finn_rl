@@ -37,8 +37,13 @@ from ..exporter.Exporter import (
 from ..utils import measure_model
 
 platform_path = './platforms'
-platform_files = {}
-platform_files['U250'] = f'{platform_path}/u250.json'
+# platform_files = {}
+# platform_files['U250'] = f'{platform_path}/u250.json'
+platform_files = {
+    'U250': f'{platform_path}/u250.json',
+    'ZCU102': f'{platform_path}/zcu102.json'
+}
+
 
 streamline_functions = {
     'LeNet5' : streamline_lenet,

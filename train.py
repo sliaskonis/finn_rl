@@ -68,7 +68,7 @@ parser.add_argument('--save-every', default = 10, type = int, help = 'How many e
 parser.add_argument('--seed', default = 234, type = int, help = 'Seed to reproduce (default: 234)')
 
 # Design Parameters
-parser.add_argument('--board', default = "U250", help = "Name of target board (default: U250)")
+parser.add_argument('--board', default = "U250", choices = ['U250', 'ZCU102'], help = "Name of target board (default: U250)")
 parser.add_argument('--shell-flow-type', default = "vitis_alveo", choices = ["vivado_zynq", "vitis_alveo"], help = "Target shell type (default: vitis_alveo)")
 parser.add_argument('--freq', type = float, default = 300.0, help = 'Frequency in MHz (default: 300)')
 parser.add_argument('--max-freq', type = float, default = 300.0, help = 'Maximum device frequency in MHz (default: 300)')

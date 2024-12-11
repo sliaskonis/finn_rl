@@ -72,7 +72,7 @@ from finn.transformation.qonnx.quant_act_to_multithreshold import (
 
 platform_path = 'platforms'
 platform_files = {}
-platform_files['U250'] = f'{platform_path}/u250.json'
+platform_files['ZCU102'] = f'{platform_path}/zcu102.json'
 
 RESOURCE_LIMITS = {
 	'BRAM_18K' : 0.8,

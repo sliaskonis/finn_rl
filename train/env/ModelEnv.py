@@ -117,10 +117,10 @@ class ModelEnv(gym.Env):
         self.min_bit = args.min_bit
         self.max_bit = args.max_bit
         self.last_action = self.max_bit
-        
+
         # init reward
         self.best_reward = -math.inf
-        
+
         self.build_state_embedding() # build the states for each layer
         self.index_to_quantize = self.quantizable_idx[self.cur_ind]
 
@@ -128,7 +128,7 @@ class ModelEnv(gym.Env):
             args.weight_bit_width,
             args.act_bit_width,
         )
-    
+
         self.orig_acc = self.finetuner.orig_acc
         self.max_fps = 0.0
         self.max_acc = 0.0
@@ -142,9 +142,9 @@ class ModelEnv(gym.Env):
     def build_state_embedding(self):
         self.model = preprocess_for_quantize(self.model)
 
-        measure_model(self.model, self.model_config['center_crop_shape'], 
+        measure_model(self.model, self.model_config['center_crop_shape'],
                     self.model_config['center_crop_shape'], self.finetuner.in_channels)
-    
+
         self.quantizable_idx = []
         self.bound_list = []
         self.num_quant_acts = 0
@@ -167,19 +167,19 @@ class ModelEnv(gym.Env):
 
                     this_state.append([i])
                     this_state.append([1])
-                    
+
                     if type(module) == nn.ReLU or type(module) == qnn.QuantReLU:
                         this_state.append([ActTypes.RELU])
                     elif type(module) == nn.ReLU6 or type(module) == qnn.QuantReLU:
                         this_state.append([ActTypes.RELU6])
                     elif type(module) == nn.Sigmoid or type(module) == qnn.QuantSigmoid:
                         this_state.append([ActTypes.SIGMOID])
-               
+
                     this_state.append([module.flops])
                     this_state.append([module.params])
                     this_state.append([1.0])
                     layer_embedding.append(np.hstack(this_state))
-        
+
         # number of activation layers
         self.num_quant_acts = len(self.quantizable_idx)
 
@@ -231,7 +231,7 @@ class ModelEnv(gym.Env):
         self.finetuner.model.to(self.finetuner.device)
         self.finetuner.init_finetuning_optim()
         self.finetuner.init_loss()
-        
+
         self.cur_ind = 0
         self.index_to_quantize = self.quantizable_idx[self.cur_ind]
         self.strategy = []
@@ -256,8 +256,8 @@ class ModelEnv(gym.Env):
                                             self.strategy,
                                             self.quantizable_idx,
                                             self.num_quant_acts)
-            # calibrate model 
-            self.finetuner.model = deepcopy(self.model) 
+            # calibrate model
+            self.finetuner.model = deepcopy(self.model)
             self.finetuner.model.to(self.finetuner.device)
             self.finetuner.calibrate()
 
@@ -269,24 +269,24 @@ class ModelEnv(gym.Env):
             # validate model
             acc = self.finetuner.validate()
             self.model = deepcopy(self.finetuner.model)
-            
-            reward = self.reward(acc)
+
+            reward = self.reward(acc, fps, self.args.target_fps)
 
             if reward > self.best_reward:
                 self.best_reward = reward
-            
+
             obs = self.layer_embedding[self.cur_ind, :].copy()
             done = True
             info = {'accuracy' : acc, 'fps' : fps, 'avg_util' : avg_util, 'strategy' : self.strategy}
-            return obs, reward, done, False, info 
-        
-        reward = 0 
+            return obs, reward, done, False, info
+
+        reward = 0
 
         self.cur_ind += 1
         self.index_to_quantize = self.quantizable_idx[self.cur_ind]
-        
+
         self.layer_embedding[self.cur_ind][-1] = float(self.last_action) / float(self.max_bit)
-        
+
         done = False
         obs = self.layer_embedding[self.cur_ind, :].copy()
         info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
@@ -303,8 +303,8 @@ class ModelEnv(gym.Env):
                                             self.strategy,
                                             self.quantizable_idx,
                                             self.num_quant_acts)
-            # calibrate model 
-            self.finetuner.model = deepcopy(self.model) 
+            # calibrate model
+            self.finetuner.model = deepcopy(self.model)
             self.finetuner.model.to(self.finetuner.device)
             self.finetuner.calibrate()
 
@@ -316,17 +316,17 @@ class ModelEnv(gym.Env):
             # validate model
             acc = self.finetuner.validate()
             self.model = deepcopy(self.finetuner.model)
-            
-            reward = self.reward(acc)
+
+            reward = self.reward(acc, fps, self.args.target_fps)
 
             if reward > self.best_reward:
                 self.best_reward = reward
-            
+
             done = True
             info = {'accuracy' : acc, 'fps' : fps, 'avg_util' : avg_util, 'strategy' : self.strategy}
-            return done, info 
-        
-        reward = 0 
+            return done, info
+
+        reward = 0
 
         self.cur_ind += 1
         self.index_to_quantize = self.quantizable_idx[self.cur_ind]
@@ -334,12 +334,25 @@ class ModelEnv(gym.Env):
         done = False
         info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
         return done, info
-    
+
     # Reward function with fps
-    def reward(self, acc):
-        # reward should be within [-1, 1]
-        return acc * 0.02 - 1.0
-        
+    def reward(self, acc, fps, target_fps):
+        # If target fps not met -> penalize
+        if (fps < target_fps):
+            return -1.0
+
+        # Normalize fps in range [-1, 1]
+        fps = fps / target_fps - 1.0
+
+        # Normalize accuracy in range [-1, 1]
+        acc = acc * 0.02 - 1.0
+
+        # Set weight for fps and accuracy
+        fps = fps * 0.9
+        acc = acc * 0.1
+
+        return acc + fps
+
     def get_action(self, action):
         action = float(action[0])
         lbound, rbound = self.bound_list[self.cur_ind]
@@ -393,9 +406,9 @@ class ModelEnv(gym.Env):
 
                 if freq <= self.args.max_freq:
                     print(f'Managed to achieve {self.args.target_fps} fps using freq = {freq} MHz. Consider changing target frequency')
-                
+
                 print(f'Target fps not achieved (achieved fps: {fps})')
-                
+
                 # reduce bitwidth in the hopes that maximum fps is achieved, start from the back
                 # where the layers typically have more neurons (should be changed to reducing bitwidth of bottleneck layer)
                 # reduce bitwidth in the hopes that maximum fps is achieved, start from the back
@@ -407,13 +420,13 @@ class ModelEnv(gym.Env):
                     self.strategy[idx] -= 1
                     reduced = True
                     print("Strategy: " + str(self.strategy))
-                
+
                 if not reduced:
                     # not another opportunity to minimize bit width
                     break
 
         return fps, avg_util
-    
+
     def maximum_fps(self):
         strategy = [self.bound_list[i][0] for i in range(len(self.quantizable_idx))]
         model_for_measure = copy.deepcopy(self.model)
@@ -429,11 +442,11 @@ class ModelEnv(gym.Env):
         ref_input = torch.randn(1, self.finetuner.in_channels, img_shape, img_shape, device = device, dtype = dtype)
         model_for_measure.eval()
         bo.export_qonnx(model_for_measure, ref_input, export_path = 'model.onnx', keep_initializers_as_inputs = True, verbose = False, opset_version = 11)
-    
+
         # Choose streamlining and hw function
         streamline_function = streamline_functions[self.args.model_name]
         convert_to_hw_function = convert_to_hw_functions[self.args.model_name]
-        
+
         model = ModelWrapper('model.onnx')
         model = preprocessing(model)
         model = postprocessing(model)
@@ -449,7 +462,7 @@ class ModelEnv(gym.Env):
         fps = self.args.freq * 10**6 / cycles
 
         print(f'Maximum achievable fps at {self.args.freq} MHz: {fps} fps')
-        
+
         if fps < self.args.target_fps:
             print(f'Target fps not achievable, changing target fps from {self.args.target_fps} to {fps}')
             self.args.target_fps = fps

@@ -88,7 +88,7 @@ def main():
 		board = args.board,
 		shell_flow_type = args.shell_flow_type,
 		fpga_part = part_map[args.board],
-		vitis_platform = alveo_default_platform[args.board],
+		vitis_platform = 'ZCU102' if args.board == 'ZCU102' else alveo_default_platform[args.board],
 		split_large_fifos = True,
 		folding_config_file = args.folding_config_file,
 		verify_input_npy = args.input_file,

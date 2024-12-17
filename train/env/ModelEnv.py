@@ -335,6 +335,7 @@ class ModelEnv(gym.Env):
         info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
         return done, info
     
+    # Reward function with fps
     def reward(self, acc):
         # reward should be within [-1, 1]
         return acc * 0.02 - 1.0

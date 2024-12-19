@@ -72,7 +72,6 @@ from finn.transformation.qonnx.quant_act_to_multithreshold import (
 
 platform_path = 'platforms'
 platform_files = {}
-platform_files['U250'] = f'{platform_path}/u250.json'
 platform_files['ZCU102'] = f'{platform_path}/zcu102.json'
 
 RESOURCE_LIMITS = {
@@ -168,7 +167,7 @@ def set_folding(model, output_dir, board, freq, target_fps):
 		available_resources[resource] *= RESOURCE_LIMITS[resource]
 		available_resources[resource] = math.floor(available_resources[resource])
 	
-	model, max_cycles, avg_util, feasible = folding(model, available_resources, freq, target_fps)
+	model, max_cycles, avg_util, feasible, max_util, resources_total = folding(model, available_resources, freq, target_fps)
 
 	if not feasible:
 		return model, 1000000, avg_util
@@ -188,7 +187,7 @@ def set_folding(model, output_dir, board, freq, target_fps):
 		]
 
 		extract_model_config_to_json(model, os.path.join(output_dir, "folding_config.json"), hw_attrs)
-		return model, max_cycles, avg_util
+		return model, max_cycles, avg_util, max_util, available_resources, resources_total
 
 def minimize_bit_width(model):
 	model = model.transform(MinimizeWeightBitWidth())

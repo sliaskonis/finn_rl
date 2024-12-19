@@ -87,7 +87,7 @@ class TensorboardCallback(BaseCallback):
         accuracy = self.env.get_acc()
         utilization = self.env.get_avg_util()
 
-        print(f"\033[91mAccuracy: {accuracy}, Utilization: {utilization}\033[0m") 
+        # print(f"\033[91mAccuracy: {accuracy}, Utilization: {utilization}\033[0m") 
 
         self.logger.record("environment/accuracy", accuracy)
         self.logger.record("environment/utilization", utilization)

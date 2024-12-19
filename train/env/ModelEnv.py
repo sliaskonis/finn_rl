@@ -130,8 +130,10 @@ class ModelEnv(gym.Env):
         )
 
         self.orig_acc = self.finetuner.orig_acc
+        self.cur_avg_util = 0.0
         self.max_fps = 0.0
         self.max_acc = 0.0
+        self.cur_acc = 0.0
 
         print('Original Accuracy: {:.3f}%'.format(self.orig_acc * 100))
 
@@ -252,6 +254,7 @@ class ModelEnv(gym.Env):
         if self.is_final_layer():
             print("Strategy: " + str(self.strategy))
             fps, avg_util = self.final_action_wall()
+            self.cur_avg_util = avg_util
             self.model = self.quantizer.quantize_model(self.model,
                                             self.strategy,
                                             self.quantizable_idx,
@@ -268,6 +271,7 @@ class ModelEnv(gym.Env):
 
             # validate model
             acc = self.finetuner.validate()
+            self.cur_acc = acc
             self.model = deepcopy(self.finetuner.model)
 
             reward = self.reward(acc, fps, self.args.target_fps)
@@ -299,6 +303,7 @@ class ModelEnv(gym.Env):
         if self.is_final_layer():
             print("Strategy: " + str(self.strategy))
             fps, avg_util = self.final_action_wall()
+            self.cur_avg_util = avg_util
             self.model = self.quantizer.quantize_model(self.model,
                                             self.strategy,
                                             self.quantizable_idx,
@@ -315,6 +320,7 @@ class ModelEnv(gym.Env):
 
             # validate model
             acc = self.finetuner.validate()
+            self.cur_acc = acc
             self.model = deepcopy(self.finetuner.model)
 
             reward = self.reward(acc, fps, self.args.target_fps)
@@ -341,18 +347,19 @@ class ModelEnv(gym.Env):
         if (fps < target_fps):
             return -1.0
 
-        # Normalize fps in range [-1, 1]
-        fps = fps / target_fps - 1.0
+        # # Normalize fps in range [-1, 1]
+        # fps = fps / target_fps - 1.0
 
         # Normalize accuracy in range [-1, 1]
-        acc = acc * 0.02 - 1.0
+        # acc = acc * 0.02 - 1.0
 
         # Set weight for fps and accuracy
-        fps = fps * 0.9
-        acc = acc * 0.1
+        # fps = fps * 0.9
+        # acc = acc * 0.1
 
-        return acc + fps
-
+        # return acc + fps
+        return acc * 0.02 - 1.0
+    
     def get_action(self, action):
         action = float(action[0])
         lbound, rbound = self.bound_list[self.cur_ind]
@@ -466,3 +473,9 @@ class ModelEnv(gym.Env):
         if fps < self.args.target_fps:
             print(f'Target fps not achievable, changing target fps from {self.args.target_fps} to {fps}')
             self.args.target_fps = fps
+
+    def get_acc(self):
+        return self.cur_acc
+
+    def get_avg_util(self):
+        return self.cur_avg_util  # Assuming `avg_util` is stored as an attribute

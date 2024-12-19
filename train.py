@@ -11,6 +11,7 @@ from pretrain.utils import get_model_config
 from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import CheckpointCallback, StopTrainingOnNoModelImprovement, EvalCallback
 
 from finn.util.basic import part_map
@@ -74,6 +75,24 @@ parser.add_argument('--freq', type = float, default = 300.0, help = 'Frequency i
 parser.add_argument('--max-freq', type = float, default = 300.0, help = 'Maximum device frequency in MHz (default: 300)')
 parser.add_argument('--target-fps', default = 6000, type = float, help = 'Target fps (default: 6000)')
 
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for logging environment metrics to TensorBoard.
+    """
+    def __init__(self, env, verbose=0):
+        super().__init__(verbose)
+        self.env = env
+
+    def _on_step(self) -> bool:
+        accuracy = self.env.get_acc()
+        utilization = self.env.get_avg_util()
+
+        print(f"\033[91mAccuracy: {accuracy}, Utilization: {utilization}\033[0m") 
+
+        self.logger.record("environment/accuracy", accuracy)
+        self.logger.record("environment/utilization", utilization)
+        return True
+
 def main():
     args = parser.parse_args()
 
@@ -98,14 +117,20 @@ def main():
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=args.noise * np.ones(n_actions))
 
-    agent = rl_algorithms[args.agent]("MlpPolicy", env, action_noise = action_noise, verbose = 1, seed = args.seed)
-    
+    agent = rl_algorithms[args.agent]("MlpPolicy", env, action_noise = action_noise, verbose = 1, seed = args.seed, tensorboard_log='./log/')
+
+    # Initialize the callbacks
+    callback = TensorboardCallback(env) 
     stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals = 3, min_evals = 5, verbose = 1)
     eval_callback = EvalCallback(eval_env, eval_freq = len(env.quantizable_idx) * 30, callback_after_eval = stop_train_callback, verbose = 1, n_eval_episodes = 1)
     checkpoint_callback = CheckpointCallback(save_freq = args.save_every * len(env.quantizable_idx), save_path = 'agents', name_prefix = f'agent_{args.model_name}') 
+    
+    # Train agent 
     agent.learn(total_timesteps=len(env.quantizable_idx) * args.num_episodes, 
                 log_interval=args.log_every,
-                callback = [eval_callback, checkpoint_callback])
+                callback = [eval_callback, checkpoint_callback, callback])
+    
+    # Save trained agent 
     agent.save(f'agents/agent_{args.model_name }')
     
 if __name__ == "__main__":

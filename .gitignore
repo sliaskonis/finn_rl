@@ -22,3 +22,4 @@ MobileNet_build/
 MobileNet_a7w7
 MobileNet_min4
 *.ipynb
+tensorboard_logs/

@@ -40,8 +40,10 @@ from ..exporter.Exporter import (
 from ..utils import measure_model
 
 platform_path = './platforms'
-platform_files = {}
-platform_files['U250'] = f'{platform_path}/u250.json'
+platform_files = {
+    'U250': f'{platform_path}/u250.json',
+    'ZCU102': f'{platform_path}/zcu102.json'
+}
 
 streamline_functions = {
 	'LeNet5' : streamline_lenet,
@@ -133,7 +135,10 @@ class ModelEnv(gym.Env):
 	
 		self.orig_acc = self.finetuner.orig_acc
 		self.max_fps = 0.0
+		self.cur_fps = 0.0
 		self.max_acc = 0.0
+		self.cur_acc = 0.0
+		self.avg_util = 0.0
 
 		print('Original Accuracy: {:.3f}%'.format(self.orig_acc * 100))
 
@@ -283,7 +288,7 @@ class ModelEnv(gym.Env):
 
 		if self.is_final_layer():
 			print("Strategy: " + str(self.strategy))
-			fps, avg_util = self.final_action_wall()
+			self.cur_fps, self.avg_util = self.final_action_wall()
 			self.model = self.quantizer.quantize_model(self.model,
 											self.strategy,
 											self.quantizable_idx,
@@ -299,17 +304,17 @@ class ModelEnv(gym.Env):
 			self.finetuner.finetune()
 
 			# validate model
-			acc = self.finetuner.validate()
+			self.cur_acc = self.finetuner.validate()
 			self.model = deepcopy(self.finetuner.model)
 			
-			reward = self.reward(acc)
+			reward = self.reward(self.cur_acc, self.strategy)
 
 			if reward > self.best_reward:
 				self.best_reward = reward
 			
 			obs = self.layer_embedding[self.cur_ind, :].copy()
 			done = True
-			info = {'accuracy' : acc, 'fps' : fps, 'avg_util' : avg_util, 'strategy' : self.strategy}
+			info = {'accuracy' : self.cur_acc, 'fps' : self.cur_fps, 'avg_util' : self.avg_util, 'strategy' : self.strategy}
 			return obs, reward, done, False, info 
 		
 		reward = 0 
@@ -330,7 +335,7 @@ class ModelEnv(gym.Env):
 
 		if self.is_final_layer():
 			print("Strategy: " + str(self.strategy))
-			fps, avg_util = self.final_action_wall()
+			self.cur_fps, self.avg_util = self.final_action_wall()
 			self.model = self.quantizer.quantize_model(self.model,
 											self.strategy,
 											self.quantizable_idx,
@@ -346,16 +351,16 @@ class ModelEnv(gym.Env):
 			self.finetuner.finetune()
 
 			# validate model
-			acc = self.finetuner.validate()
+			self.cur_acc = self.finetuner.validate()
 			self.model = deepcopy(self.finetuner.model)
 			
-			reward = self.reward(acc)
+			reward = self.reward(self.cur_acc, self.strategy)
 
 			if reward > self.best_reward:
 				self.best_reward = reward
 			
 			done = True
-			info = {'accuracy' : acc, 'fps' : fps, 'avg_util' : avg_util, 'strategy' : self.strategy}
+			info = {'accuracy' : self.cur_acc, 'fps' : self.cur_fps, 'avg_util' : self.avg_util, 'strategy' : self.strategy}
 			return done, info 
 		
 		reward = 0 
@@ -367,7 +372,8 @@ class ModelEnv(gym.Env):
 		info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
 		return done, info
 	
-	def reward(self, acc):
+	def reward(self, acc, strategy):
+
 		# reward should be within [-1, 1]
 		return acc * 0.02 - 1.0
 		

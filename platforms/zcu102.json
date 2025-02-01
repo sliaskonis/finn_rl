@@ -1,0 +1,9 @@
+{
+	"name" : "ZCU102",
+	"resources" : {
+		"BRAM_18K" : 1824,
+		"LUT"  : 274080,
+		"URAM" : 0,
+	  	"DSP"  : 2520
+	}
+  }

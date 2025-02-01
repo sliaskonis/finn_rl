@@ -11,7 +11,7 @@ from pretrain.utils import get_model_config
 from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise
-from stable_baselines3.common.callbacks import CheckpointCallback, StopTrainingOnNoModelImprovement, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, StopTrainingOnNoModelImprovement, EvalCallback, BaseCallback
 
 from finn.util.basic import part_map
 
@@ -23,6 +23,30 @@ rl_algorithms = {
     'TD3': TD3
 }
 
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for plotting additional values in tensorboard.
+    """
+
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # Ensure environment exists
+        if hasattr(self.training_env, 'envs'):
+            env = self.training_env.envs[0]  # Assuming a single environment
+
+            # Log cur_acc and cur_fps
+            if hasattr(env, 'cur_acc'):
+                self.logger.record("env/cur_acc", env.unwrapped.cur_acc)
+            if hasattr(env, 'cur_fps'):
+                self.logger.record("env/cur_fps", env.unwrapped.cur_fps)
+            if hasattr(env, 'avg_util'):
+                self.logger.record("env/avg_util", env.unwrapped.avg_util)
+
+        return True
+
+# Parse arguments
 parser = argparse.ArgumentParser(description = 'Train RL Agent')
 
 # Model Parameters
@@ -69,13 +93,16 @@ parser.add_argument('--save-every', default = 10, type = int, help = 'How many e
 parser.add_argument('--seed', default = 234, type = int, help = 'Seed to reproduce (default: 234)')
 
 # Design Parameters
-parser.add_argument('--board', default = "U250", help = "Name of target board (default: U250)")
+parser.add_argument('--board', default = "U250", choices = ['U250', 'ZCU102'], help = "Name of target board (default: U250)")
 parser.add_argument('--board-file', default = 'platforms/u250.json', help = "Name of file with resources (default: platforms/u250.json)")
 parser.add_argument('--slr', type = int, default = -1, help = 'SLR to map the accelerator (default: -1)')
 parser.add_argument('--shell-flow-type', default = "vitis_alveo", choices = ["vivado_zynq", "vitis_alveo"], help = "Target shell type (default: vitis_alveo)")
 parser.add_argument('--freq', type = float, default = 300.0, help = 'Frequency in MHz (default: 300)')
 parser.add_argument('--max-freq', type = float, default = 300.0, help = 'Maximum device frequency in MHz (default: 300)')
 parser.add_argument('--target-fps', default = 6000, type = float, help = 'Target fps (default: 6000)')
+
+# Logger parameters
+parser.add_argument('--tensorboard-log', default='./tensorboard_logs', help='Directory for TensorBoard logs')
 
 def main():
     args = parser.parse_args()
@@ -101,14 +128,24 @@ def main():
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=args.noise * np.ones(n_actions))
 
-    agent = rl_algorithms[args.agent]("MlpPolicy", env, action_noise = action_noise, verbose = 1, seed = args.seed)
+    agent = rl_algorithms[args.agent](
+        "MlpPolicy", 
+        env, 
+        action_noise = action_noise, 
+        verbose = 1, 
+        seed = args.seed,
+        tensorboard_log = args.tensorboard_log
+        )
     
     stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals = 3, min_evals = 5, verbose = 1)
     eval_callback = EvalCallback(eval_env, eval_freq = len(env.quantizable_idx) * 30, callback_after_eval = stop_train_callback, verbose = 1, n_eval_episodes = 1)
     checkpoint_callback = CheckpointCallback(save_freq = args.save_every * len(env.quantizable_idx), save_path = 'agents', name_prefix = f'agent_{args.model_name}') 
-    agent.learn(total_timesteps=len(env.quantizable_idx) * args.num_episodes, 
-                log_interval=args.log_every,
-                callback = [eval_callback, checkpoint_callback])
+    tensorboard_callback = TensorboardCallback()
+    agent.learn(total_timesteps = len(env.quantizable_idx) * args.num_episodes, 
+                callback = [eval_callback, checkpoint_callback, tensorboard_callback],
+                log_interval = 1,
+                tb_log_name = f"RL_{args.agent}_{args.model_name}"
+                )
     agent.save(f'agents/agent_{args.model_name }')
     
 if __name__ == "__main__":

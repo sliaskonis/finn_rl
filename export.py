@@ -47,6 +47,15 @@ convert_to_hw_functions = {
 	'resnet152' : convert_to_hw_resnet,
 }
 
+# Determine which shell flow to use for a given platform
+def get_vitis_platform(platform):
+    if platform in alveo_default_platform:
+        # For Alveo, use the Vitis platform name as the release name
+        return build_cfg.ShellFlowType.VITIS_ALVEO, alveo_default_platform[platform]
+    else:
+        # For Zynq, use the board name as the release name
+        return build_cfg.ShellFlowType.VIVADO_ZYNQ, platform
+
 def main():
 	args = parser.parse_args()
 	output_dir = args.output_dir
@@ -81,14 +90,16 @@ def main():
 	if args.rtlsim_verification:
 		verify_steps.append(build_cfg.VerificationStepType.STITCHED_IP_RTLSIM)
 
+	shell_flow_type, vitis_platform = get_vitis_platform(args.board)
+
 	cfg_build = build.DataflowBuildConfig(
 		output_dir = output_dir,
 		synth_clk_period_ns = args.synth_clk_period_ns,
 		mvau_wwidth_max = 1000000,
 		board = args.board,
-		shell_flow_type = args.shell_flow_type,
+		shell_flow_type = shell_flow_type,
 		fpga_part = part_map[args.board],
-		vitis_platform = 'ZCU102' if args.board == 'ZCU102' else alveo_default_platform[args.board],
+		vitis_platform = vitis_platform,
 		split_large_fifos = True,
 		folding_config_file = args.folding_config_file,
 		verify_input_npy = args.input_file,

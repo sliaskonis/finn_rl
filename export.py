@@ -3,7 +3,7 @@ import argparse
 from exporter.Exporter import (preprocessing, postprocessing,
 							   make_input_channels_last, streamline_resnet, 
 							   convert_to_hw_resnet, name_nodes, streamline_lenet,
-							   convert_to_hw_lenet, streamline_mobilenet, convert_to_hw_mobilenet)
+							   convert_to_hw_lenet)
 
 import finn.builder.build_dataflow as build
 import finn.builder.build_dataflow_config as build_cfg
@@ -36,7 +36,6 @@ streamline_functions = {
 	'resnet50' : streamline_resnet,
 	'resnet100' : streamline_resnet,
 	'resnet152' : streamline_resnet,
-	'MobileNet' : streamline_mobilenet,
 }
 
 convert_to_hw_functions = {
@@ -46,8 +45,16 @@ convert_to_hw_functions = {
 	'resnet50' : convert_to_hw_resnet,
 	'resnet100' : convert_to_hw_resnet,
 	'resnet152' : convert_to_hw_resnet,
-	'MobileNet' : convert_to_hw_mobilenet
 }
+
+# Determine shell flow type and realease name based on a given platform
+def get_vitis_platform(platform):
+    if platform in alveo_default_platform:
+        # For Alveo, use the Vitis platform name as the release name
+        return build_cfg.ShellFlowType.VITIS_ALVEO, alveo_default_platform[platform]
+    else:
+        # For Zynq, use the board name as the release name
+        return build_cfg.ShellFlowType.VIVADO_ZYNQ, platform
 
 def main():
 	args = parser.parse_args()
@@ -83,14 +90,16 @@ def main():
 	if args.rtlsim_verification:
 		verify_steps.append(build_cfg.VerificationStepType.STITCHED_IP_RTLSIM)
 
+	shell_flow_type, vitis_platform = get_vitis_platform(args.board)
+
 	cfg_build = build.DataflowBuildConfig(
 		output_dir = output_dir,
 		synth_clk_period_ns = args.synth_clk_period_ns,
 		mvau_wwidth_max = 1000000,
 		board = args.board,
-		shell_flow_type = args.shell_flow_type,
+		shell_flow_type = shell_flow_type,
 		fpga_part = part_map[args.board],
-		vitis_platform = alveo_default_platform[args.board],
+		vitis_platform = vitis_platform,
 		split_large_fifos = True,
 		folding_config_file = args.folding_config_file,
 		verify_input_npy = args.input_file,

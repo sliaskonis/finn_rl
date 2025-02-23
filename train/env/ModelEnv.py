@@ -119,7 +119,6 @@ class ModelEnv(gym.Env):
 		self.min_bit = args.min_bit
 		self.max_bit = args.max_bit
 		self.last_action = self.max_bit
-		
 		# init reward
 		self.best_reward = -math.inf
 		self.qonnx_to_pytorch = {}
@@ -372,25 +371,28 @@ class ModelEnv(gym.Env):
 		info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
 		return done, info
 	
+	# def reward(self, acc, strategy):
+
+	# 	# reward should be within [-1, 1]
+	# 	return acc * 0.02 - 1.0
+
+	# Penalize high bit-width usage (to encourage quantization)
 	def reward(self, acc, strategy):
 
-		# reward should be within [-1, 1]
-		return acc * 0.02 - 1.0
+		# Bit penalty normalized to [0.125,1]
+		avg_bit_width = np.mean(strategy)
+		bit_penalty = avg_bit_width / self.max_bit
 
-	# def reward(self, acc, strategy):
-	# 	# Scale accuracy to a range between 0 and 1
-	# 	acc_score = acc  
+		# Normalize acc to [0,1]
+		normalized_acc = 0.01 * acc
 
-	# 	# Penalize high bit-width usage (to encourage quantization)
-	# 	avg_bit_width = np.mean(strategy)
-	# 	bit_penalty = (avg_bit_width - self.min_bit) / (self.max_bit - self.min_bit)
+		# Set weights for accuracy and bitwidth
+		alpha = 0.5
+		beta  = 0.5
 
-	# 	# Define the final reward, giving more weight to accuracy
-	# 	weight_accuracy = 3  # Increase this to give more weight to accuracy
-	# 	reward = weight_accuracy * acc_score * (1 - bit_penalty) - 1
+		reward = np.tanh(alpha*normalized_acc - beta*bit_penalty)
 
-	# 	# Clip reward to ensure it's in the range [-1, 1]
-	# 	return np.clip(reward, -1, 1)
+		return reward
 
 	def get_action(self, action):
 		action = float(action[0])

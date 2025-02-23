@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 
 from train.env import ModelEnv
+from train.env.ModelEnv import platform_files
 from pretrain.utils import get_model_config
 
 from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
@@ -116,6 +117,7 @@ def main():
     
     args.fpga_part = part_map[args.board]
     args.output_dir = args.model_name
+    args.board_file = platform_files[args.board]
 
     eval_env = ModelEnv(args, get_model_config(args.dataset), testing = True)
 

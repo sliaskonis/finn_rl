@@ -376,7 +376,22 @@ class ModelEnv(gym.Env):
 
 		# reward should be within [-1, 1]
 		return acc * 0.02 - 1.0
-		
+
+	# def reward(self, acc, strategy):
+	# 	# Scale accuracy to a range between 0 and 1
+	# 	acc_score = acc  
+
+	# 	# Penalize high bit-width usage (to encourage quantization)
+	# 	avg_bit_width = np.mean(strategy)
+	# 	bit_penalty = (avg_bit_width - self.min_bit) / (self.max_bit - self.min_bit)
+
+	# 	# Define the final reward, giving more weight to accuracy
+	# 	weight_accuracy = 3  # Increase this to give more weight to accuracy
+	# 	reward = weight_accuracy * acc_score * (1 - bit_penalty) - 1
+
+	# 	# Clip reward to ensure it's in the range [-1, 1]
+	# 	return np.clip(reward, -1, 1)
+
 	def get_action(self, action):
 		action = float(action[0])
 		lbound, rbound = self.bound_list[self.cur_ind]

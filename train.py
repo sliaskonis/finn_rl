@@ -40,8 +40,6 @@ class TensorboardCallback(BaseCallback):
             # Log cur_acc and cur_fps
             if hasattr(env, 'cur_acc'):
                 self.logger.record("env/cur_acc", env.unwrapped.cur_acc)
-            if hasattr(env, 'cur_fps'):
-                self.logger.record("env/cur_fps", env.unwrapped.cur_fps)
             if hasattr(env, 'avg_util'):
                 self.logger.record("env/avg_util", env.unwrapped.avg_util)
 
@@ -108,17 +106,19 @@ parser.add_argument('--tensorboard-log', default='./tensorboard_logs', help='Dir
 def main():
     args = parser.parse_args()
 
-    # set seed to reproduce
+    # Set seed to reproduce
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
     if args.device == 'GPU' and torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     
-    args.fpga_part = part_map[args.board]
+    # Initialize device settings
     args.output_dir = args.model_name
+    args.fpga_part = part_map[args.board]
     args.board_file = platform_files[args.board]
 
+    # Set-up Training and Evaluation Environments
     eval_env = ModelEnv(args, get_model_config(args.dataset), testing = True)
 
     env = Monitor(
@@ -130,6 +130,7 @@ def main():
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=args.noise * np.ones(n_actions))
 
+    # Set and initialize RL-Agent
     agent = rl_algorithms[args.agent](
         "MlpPolicy", 
         env, 
@@ -138,16 +139,41 @@ def main():
         seed = args.seed,
         tensorboard_log = args.tensorboard_log
         )
-    
-    stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals = 3, min_evals = 5, verbose = 1)
-    eval_callback = EvalCallback(eval_env, eval_freq = len(env.quantizable_idx) * 30, callback_after_eval = stop_train_callback, verbose = 1, n_eval_episodes = 1)
-    checkpoint_callback = CheckpointCallback(save_freq = args.save_every * len(env.quantizable_idx), save_path = 'agents', name_prefix = f'agent_{args.model_name}') 
+
+    # Callbacks
+    stop_train_callback = StopTrainingOnNoModelImprovement(
+        max_no_improvement_evals = 3, 
+        min_evals = 5, 
+        verbose = 1
+    )
+
+    eval_callback = EvalCallback(
+        eval_env, 
+        eval_freq = len(env.quantizable_idx) * 5,
+        best_model_save_path=f'agents/best_{args.model_name}',
+        log_path='agents',
+        callback_after_eval = stop_train_callback, 
+        verbose = 1, 
+        n_eval_episodes = 1
+    )
+
+    checkpoint_callback = CheckpointCallback(
+        save_freq = args.save_every * len(env.quantizable_idx), 
+        save_path = 'agents', 
+        name_prefix = f'agent_{args.model_name}'
+    )
+
     tensorboard_callback = TensorboardCallback()
-    agent.learn(total_timesteps = len(env.quantizable_idx) * args.num_episodes, 
-                callback = [eval_callback, checkpoint_callback, tensorboard_callback],
-                log_interval = 1,
-                tb_log_name = f"RL_{args.agent}_{args.model_name}"
-                )
+
+    # Agent Training
+    agent.learn(
+        total_timesteps = len(env.quantizable_idx) * args.num_episodes, 
+        callback = [eval_callback, checkpoint_callback, tensorboard_callback], 
+        log_interval = 1,
+        tb_log_name = f"RL_{args.agent}_{args.model_name}"
+    )
+    
+    # Save final agent (best agent is also saved during the evaluation callbacks)
     agent.save(f'agents/agent_{args.model_name }')
     
 if __name__ == "__main__":

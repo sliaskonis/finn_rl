@@ -461,7 +461,6 @@ def folding(model, available_resources, freq, target_fps, slr):
 		
 		model, increased = increase_folding(model, bottleneck_layer)
 
-		print(f'New latency : {latency} cycles')
 		if not increased:
 			break
 
@@ -471,8 +470,10 @@ def folding(model, available_resources, freq, target_fps, slr):
 
 	resources_per_layer = estimate_resources(model)
 	resources_total = aggregate_dict_keys(resources_per_layer)
+
 	print("Total estimated resources: " + str(resources_total))
 	print("Available resources: " + str(available_resources))
+	print(f'Achieved latency : {latency} cycles')
 
 	cycles_per_layer = estimate_cycles(model)
 	max_cycles = max(cycles_per_layer.items(), key = lambda x : x[1])[1]

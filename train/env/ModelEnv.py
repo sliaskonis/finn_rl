@@ -287,7 +287,7 @@ class ModelEnv(gym.Env):
 
 		if self.is_final_layer():
 			print("Strategy: " + str(self.strategy))
-			self.cur_fps, self.avg_util = self.final_action_wall()
+			self.cur_fps, self.avg_util, self.max_util, self.available_resources, self.resources_total = self.final_action_wall()
 			self.model = self.quantizer.quantize_model(self.model,
 											self.strategy,
 											self.quantizable_idx,
@@ -306,7 +306,8 @@ class ModelEnv(gym.Env):
 			self.cur_acc = self.finetuner.validate()
 			self.model = deepcopy(self.finetuner.model)
 			
-			reward = self.reward(self.cur_acc, self.strategy)
+			# reward(self, acc, avg_util, max_util, available_resources, resources_total)
+			reward = self.reward(self.cur_acc, self.avg_util, self.max_util, self.available_resources, self.resources_total)
 
 			if reward > self.best_reward:
 				self.best_reward = reward
@@ -314,7 +315,7 @@ class ModelEnv(gym.Env):
 			obs = self.layer_embedding[self.cur_ind, :].copy()
 			done = True
 			info = {'accuracy' : self.cur_acc, 'fps' : self.cur_fps, 'avg_util' : self.avg_util, 'strategy' : self.strategy}
-			return obs, reward, done, False, info 
+			return obs, reward, done, False, info
 		
 		reward = 0 
 
@@ -334,7 +335,7 @@ class ModelEnv(gym.Env):
 
 		if self.is_final_layer():
 			print("Strategy: " + str(self.strategy))
-			self.cur_fps, self.avg_util = self.final_action_wall()
+			self.cur_fps, self.avg_util, self.max_util, self.available_resources, self.resources_total = self.final_action_wall()
 			self.model = self.quantizer.quantize_model(self.model,
 											self.strategy,
 											self.quantizable_idx,
@@ -370,27 +371,60 @@ class ModelEnv(gym.Env):
 		done = False
 		info = {'accuracy' : 0.0, 'fps' : 0.0, 'avg_util' : 0.0, 'strategy' : self.strategy}
 		return done, info
+
 	
-	# def reward(self, acc, strategy):
+	def reward(self, acc, avg_util, max_util, available_resources, resources_total):
+        # reward should be within [-1, 1]
+		acc_weighted = (acc * 0.02 - 1.0)
+		acc_weight = 0.25
+		if resources_total['BRAM_18K'] == 0:
+			resources_BRAM = 0
+			weight_BRAM = 0
+		else:
+			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_resources['BRAM_18K'])) / available_resources['BRAM_18K'] - 1
+			weight_BRAM = 0.25
+		if resources_total['LUT'] == 0:
+			resources_LUT = 0
+			weight_LUT = 0
+		else:
+			resources_LUT = (2 * (-resources_total['LUT'] + available_resources['LUT'])) / available_resources['LUT'] - 1
+			weight_LUT = 0.25
+		if resources_total['DSP'] == 0:
+			resources_DSP = 0
+			weight_DSP = 0
+		else:
+			resources_DSP = (2 * (-resources_total['DSP'] + available_resources['DSP'])) / available_resources['DSP'] - 1
+			weight_DSP = 0.25
 
-	# 	# reward should be within [-1, 1]
-	# 	return acc * 0.02 - 1.0
+		print(f"BRAM TOTAL: {resources_total['BRAM_18K']}")
+		print(f"LUT TOTAL: {resources_total['LUT']}")
+		print(f"DSP TOTAL: {resources_total['DSP']}")
 
-	# Penalize high bit-width usage (to encourage quantization)
-	def reward(self, acc, strategy):
+		print(f"BRAM USED: {available_resources['BRAM_18K']}")
+		print(f"LUT USED: {available_resources['LUT']}")
+		print(f"DSP USED: {available_resources['DSP']}")
 
-		# Bit penalty normalized to [0.125,1]
-		avg_bit_width = np.mean(strategy)
-		bit_penalty = avg_bit_width / self.max_bit
+		print(f"BRAM: {weight_BRAM * resources_BRAM}")
+		print(f"LUT: {weight_LUT * resources_LUT}")
+		print(f"DSP: {weight_DSP * resources_DSP}")
+		print(f"Acc: {acc_weight * acc_weighted}")
+		print(f"Reward: {acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP}")
+		
+		if weight_BRAM == 0:
+			weight_LUT += 0.125
+			weight_DSP += 0.125
+		elif weight_DSP == 0:
+			weight_LUT += 0.125
+			weight_BRAM += 0.125
+		elif weight_BRAM == 0 and weight_DSP == 0:
+			weight_LUT += 0.25
 
-		# Normalize acc to [0,1]
-		normalized_acc = 0.01 * acc
+		reward = acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP
 
-		# Set weights for accuracy and bitwidth
-		alpha = 0.5
-		beta  = 0.5
-
-		reward = np.tanh(alpha*normalized_acc - beta*bit_penalty)
+		# assign the previous resources to the global variables
+		previous_resources_BRAM = resources_BRAM
+		previous_resources_LUT = resources_LUT
+		previous_resources_DSP = resources_DSP
 
 		return reward
 
@@ -434,7 +468,7 @@ class ModelEnv(gym.Env):
 			model = convert_to_hw_function(model)
 			model = create_dataflow_partition(model)
 			model = specialize_layers(model, self.args.fpga_part)
-			model, cycles, avg_util, bottleneck_layer = set_folding(model, self.args.output_dir, self.args.board_file, self.args.freq, self.args.target_fps, self.args.slr)
+			model, cycles, avg_util, bottleneck_layer, max_util, available_resources, resources_total = set_folding(model, self.args.output_dir, self.args.board_file, self.args.freq, self.args.target_fps, self.args.slr)
 
 			fps = self.args.freq * 10**6 / cycles
 			print(f'Achieved fps: {fps}')
@@ -461,7 +495,7 @@ class ModelEnv(gym.Env):
 					# not another opportunity to minimize bit width
 					break
 
-		return fps, avg_util
+		return fps, avg_util, max_util, available_resources, resources_total
 	
 	def maximum_fps(self):
 		strategy = [self.bound_list[i][0] for i in range(len(self.quantizable_idx))]
@@ -494,7 +528,7 @@ class ModelEnv(gym.Env):
 		model = convert_to_hw_function(model)
 		model = create_dataflow_partition(model)
 		model = specialize_layers(model, self.args.fpga_part)
-		model, cycles, _, _ = set_folding(model, self.args.output_dir, self.args.board_file, self.args.freq, self.args.target_fps, self.args.slr)
+		model, cycles, _, _, _, _, _ = set_folding(model, self.args.output_dir, self.args.board_file, self.args.freq, self.args.target_fps, self.args.slr)
 		
 		if cycles < 0:
 			print('Initial model infeasible')

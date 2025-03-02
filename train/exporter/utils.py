@@ -477,5 +477,5 @@ def folding(model, available_resources, freq, target_fps, slr):
 
 	cycles_per_layer = estimate_cycles(model)
 	max_cycles = max(cycles_per_layer.items(), key = lambda x : x[1])[1]
-	avg_util, _ = avg_utilization(model, available_resources)
-	return model, max_cycles, avg_util, True, bottleneck_layer
+	avg_util, max_util = avg_utilization(model, available_resources)
+	return model, max_cycles, avg_util, True, bottleneck_layer, max_util, resources_total

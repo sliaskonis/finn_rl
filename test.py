@@ -7,6 +7,7 @@ import argparse
 from copy import deepcopy
 
 from train.env import ModelEnv
+from train.env.ModelEnv import platform_files
 from pretrain.utils import get_model_config
 from finn.util.basic import part_map
 import brevitas.onnx as bo
@@ -82,6 +83,7 @@ parser.add_argument('--strategy', type = str, default = None, help = 'Custom qua
 
 args = parser.parse_args()
 args.fpga_part = part_map[args.board]
+args.board_file = platform_files[args.board]
 
 # set seed to reproduce
 random.seed(args.seed)

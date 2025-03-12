@@ -11,7 +11,7 @@ from qonnx.transformation.general import (
 
 from copy import deepcopy
 
-def set_defaults(model):
+def set_defaults(model, slr):
 	model = model.transform(GiveUniqueNodeNames())
 	model = model.transform(GiveReadableTensorNames())
 
@@ -24,6 +24,9 @@ def set_defaults(model):
 		
 		if "SIMD" in attrs:
 			inst.set_nodeattr("SIMD", 1)
+
+		if "slr" in attrs:
+			inst.set_nodeattr("slr", slr)
 
 	return model
 
@@ -156,10 +159,8 @@ def reduceLUTUsage(model, resources_per_layer, available_resources, max_iters = 
 				
 				if ram_style == "distributed":
 					node_inst.set_nodeattr("ram_style", "ultra")
-					node_inst.set_nodeattr("runtime_writeable_weights", 1)
 					if node_inst.uram_efficiency_estimation() < 0.1:
 						node_inst.set_nodeattr("ram_style", "block")
-						node_inst.set_nodeattr("runtime_writeable_weights", 0)
 					break
 			elif op_type == "Thresholding_hls":
 				ram_style = node_inst.get_nodeattr("ram_style")
@@ -437,15 +438,15 @@ def avg_utilization(model, available_resources):
 	
 	return avg_util, max_util
 
-def folding(model, available_resources, freq, target_fps):
-	set_defaults(model)
+def folding(model, available_resources, freq, target_fps, slr):
+	set_defaults(model, slr)
 	prev_model = deepcopy(model)
 
 	model, feasible = isFeasible(model, available_resources)
 
 	if not feasible:
 		avg_util, max_util = avg_utilization(model, available_resources)
-		return model, 0.0, avg_util, False
+		return model, 0.0, avg_util, False, None
 
 	while feasible:
 		prev_model = deepcopy(model)
@@ -476,4 +477,4 @@ def folding(model, available_resources, freq, target_fps):
 	cycles_per_layer = estimate_cycles(model)
 	max_cycles = max(cycles_per_layer.items(), key = lambda x : x[1])[1]
 	avg_util, _ = avg_utilization(model, available_resources)
-	return model, max_cycles, avg_util, True
+	return model, max_cycles, avg_util, True, bottleneck_layer

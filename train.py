@@ -7,7 +7,7 @@ import numpy as np
 
 from train.env import ModelEnv
 from train.env.ModelEnv import platform_files
-from pretrain.utils import get_model_config
+from train.env.utils import get_model_config
 
 from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
 from stable_baselines3.common.monitor import Monitor

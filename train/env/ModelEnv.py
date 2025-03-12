@@ -41,6 +41,9 @@ from ..utils import measure_model
 
 # Global variable
 count_reward = 0
+available_BRAMs = 0
+available_LUTs = 0
+available_DSPs = 0
 
 platform_path = './platforms'
 platform_files = {
@@ -379,18 +382,28 @@ class ModelEnv(gym.Env):
 	def reward(self, acc, avg_util, max_util, available_resources, resources_total, print_info=True):
         # reward should be within [-1, 1]
 
-		# count_reward += 1
-
-		# if count_reward == 1:
-
-
 		# The weight of the accuracy in the reward function should be 25%
 		acc_weighted = (acc * 0.02 - 1.0) # Normalize accuracy to [-1, 1]
 		acc_weight = 0.25 # 25% of the reward
+		
+		# Define the global variables
+		global count_reward
+		global available_BRAMs
+		global available_LUTs
+		global available_DSPs
+		
+		count_reward += 1
 
-		bram_util = resources_total['BRAM_18K'] / available_resources['BRAM_18K']
-		lut_util = resources_total['LUT'] / available_resources['LUT']
-		dsp_util = resources_total['DSP'] / available_resources['DSP']
+		if count_reward == 1:
+			available_BRAMs = resources_total['BRAM_18K']
+			available_LUTs = resources_total['LUT']
+			available_DSPs = resources_total['DSP']
+
+			return acc_weighted
+
+		bram_util = resources_total['BRAM_18K'] / available_BRAMs
+		lut_util = resources_total['LUT'] / available_LUTs
+		dsp_util = resources_total['DSP'] / available_DSPs
 
 		# Check which of the components have the bigger usage
 		if bram_util >= lut_util and bram_util >= dsp_util:
@@ -432,15 +445,15 @@ class ModelEnv(gym.Env):
 		
 		# Calculate the reward components
 		if resources_total['BRAM_18K'] != 0:
-			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_resources['BRAM_18K'])) / available_resources['BRAM_18K'] - 1
+			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_BRAMs)) / available_BRAMs - 1
 		else:
 			resources_BRAM = 1.0
 		if resources_total['LUT'] != 0:
-			resources_LUT = (2 * (-resources_total['LUT'] + available_resources['LUT'])) / available_resources['LUT'] - 1
+			resources_LUT = (2 * (-resources_total['LUT'] + available_LUTs)) / available_LUTs - 1
 		else:
 			resources_LUT = 1.0
 		if resources_total['DSP'] != 0:
-			resources_DSP = (2 * (-resources_total['DSP'] + available_resources['DSP'])) / available_resources['DSP'] - 1
+			resources_DSP = (2 * (-resources_total['DSP'] + available_DSPs)) / available_DSPs - 1
 		else:
 			resources_DSP = 1.0
 		
@@ -463,9 +476,9 @@ class ModelEnv(gym.Env):
 			print(f"\033[91mDSP USED: {resources_total['DSP']}\033[0m")
 
 			print("\033[92m================AVAILABLE RESOURCES================\033[0m")
-			print(f"\033[92mBRAM AVAILABLE: {available_resources['BRAM_18K']}\033[0m")
-			print(f"\033[92mLUT AVAILABLE: {available_resources['LUT']}\033[0m")
-			print(f"\033[92mDSP AVAILABLE: {available_resources['DSP']}\033[0m")
+			print(f"\033[92mBRAM AVAILABLE: {available_BRAMs}\033[0m")
+			print(f"\033[92mLUT AVAILABLE: {available_LUTs}\033[0m")
+			print(f"\033[92mDSP AVAILABLE: {available_DSPs}\033[0m")
 
 			print("\033[94m================REWARD COMPONENTS================\033[0m")
 			print(f"\033[94mBRAM: {weight_BRAM * resources_BRAM}\033[0m")

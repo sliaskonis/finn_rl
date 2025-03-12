@@ -1,4 +1,5 @@
 import uuid
+import json
 import os
 
 import torch
@@ -7,23 +8,25 @@ import torch.nn.functional as F
 
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST
+from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
 
-from ..logger import Logger
 from ..utils import *
-from ..models import LeNet5, ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
+from ..logger import Logger
+from ..models import LeNet5, ResNet18, ResNet34, ResNet50, ResNet101, ResNet152, MobileNet
 
+# Available networks
 networks = {'LeNet5' : LeNet5,
-			'resnet18' : ResNet18, 
+			'resnet18' : ResNet18,
 			'resnet34' : ResNet34,
 			'resnet50' : ResNet50,
 			'resnet101' : ResNet101,
-			'resnet152' : ResNet152}
+			'resnet152' : ResNet152,
+			'MobileNet' : MobileNet}
 
 class Trainer(object):
-	def __init__(self, args, model_config):
+	def __init__(self, args):
 		self.args = args
-		
+
 		# Initialize device
 		self.device = None
 		self.init_device()
@@ -68,57 +71,60 @@ class Trainer(object):
 		if self.args.device == 'GPU' and torch.cuda.is_available():
 			print('Using GPU device')
 			self.device = 'cuda'
+		elif self.args.device == 'mps' and torch.backends.mps.is_available():
+			print('Using MPS device')
+			self.device = 'mps'
 		else:
 			print('Using CPU device')
 			self.device = 'cpu'
 
 	def init_dataset(self, args):
-		if args.dataset == 'CIFAR10':
-			builder = CIFAR10
-			self.num_classes = 10
-			self.in_channels = 3
 
-			transformations = transforms.Compose([
-				transforms.RandomCrop(32, padding = 4),
-				transforms.ToTensor(),
-			])
-		elif args.dataset == 'MNIST':
-			builder = MNIST
-			self.num_classes = 10
-			self.in_channels = 1
-		
-			transformations = transforms.Compose([
-				transforms.Resize(28),
-				transforms.CenterCrop(28),
-				transforms.ToTensor(),
-			])
+		# Load dataset information from JSON file
+		with open("pretrain/datasets.json", "r") as json_file:
+			dataset_dict = json.load(json_file)
 
+		# Validate if dataset exists in JSON
+		if args.dataset not in dataset_dict:
+			raise ValueError(f"Dataset {args.dataset} is not supported. Choose from {list(dataset_dict.keys())}.")
+
+		# Get dataset information
+		dataset_info = dataset_dict[args.dataset]
+		self.num_classes = dataset_info['num_classes']
+		self.in_channels = dataset_info['in_channels']
+		builder = eval(dataset_info['builder'])
+
+		# Get transformations
+		transformations = get_transforms(dataset_info, self.args.transformations)
+
+		# Load dataset
 		train_set = builder(root=args.datadir,
 							train=True,
 							download=True,
 							transform=transformations)
-		
+
 		test_set = builder(root=args.datadir,
 						   train=False,
 						   download=True,
 						   transform=transformations)
-		
+
 		train_set, val_set = random_split(train_set, [1 - args.validation_split, args.validation_split])
 
+		# Create data loaders
 		self.train_loader = DataLoader(train_set,
 									   batch_size = self.batch_size_training,
 									   num_workers = self.args.num_workers,
 									   shuffle = True)
-		
+
 		self.val_loader = DataLoader(val_set,
 									 batch_size = self.batch_size_validation,
 									 num_workers = self.args.num_workers,
 									 shuffle = True)
-		
+
 		self.test_loader = DataLoader(test_set,
 									  batch_size = self.batch_size_validation,
 									  num_workers = self.args.num_workers)
-		
+
 	def init_model(self):
 		self.best_val_acc = 0.0
 
@@ -131,19 +137,19 @@ class Trainer(object):
 			self.model.load_state_dict(package['state_dict'])
 			self.best_val_acc = package['best_val_acc']
 			self.model.to(self.device)
-		
+
 		if self.args.pretrained and self.args.model_path is not None:
 			print('Loading pretrained model')
 			package = torch.load(self.args.model_path, map_location = self.device)
 			self.model.load_state_dict(package['state_dict'])
 			self.model.to(self.device)
-			
+
 	def init_output(self):
 		name = "{}_{}".format(self.args.model_name, uuid.uuid4())
-		
+
 		self.output_dir_path = os.path.join(self.args.save_dir, name)
 
-		if self.args.resume_from: 
+		if self.args.resume_from:
 			# if resuming from checkpoint, the save_dir path is two paths behind
 			self.output_dir_path, _ = os.path.split(self.args.resume_from)
 			self.output_dir_path, _ = os.path.split(self.output_dir_path)
@@ -169,9 +175,9 @@ class Trainer(object):
 		elif self.args.optimizer == 'SGD':
 			self.training_optimizer = torch.optim.SGD(self.model.parameters(), lr = self.training_lr, 
 													  weight_decay = self.args.weight_decay, momentum=self.args.momentum)
-		
+
 		self.starting_epoch = 0
-		
+
 		if self.args.resume_from is not None:
 			# load optimizer stats from checkpoint
 			package = torch.load(self.args.resume_from, map_location = self.device)
@@ -193,7 +199,7 @@ class Trainer(object):
 
 	def init_logger(self, output_dir_path):
 		self.logger = Logger(output_dir_path)
-	
+
 	def checkpoint(self, model, epoch, val_acc, name):
 		name = '{}_'.format(model) + name
 		path = os.path.join(self.checkpoint_dir_path, name)
@@ -207,7 +213,7 @@ class Trainer(object):
 		}, path)
 
 		return path
-	
+
 	def check_accuracy(self, loader, model):
 		num_correct = 0
 		num_samples = 0
@@ -223,7 +229,7 @@ class Trainer(object):
 				num_samples += preds.size(0)
 			acc = float(num_correct) / num_samples
 			self.logger.log.info('Got {} / {} correct ({})'.format(num_correct, num_samples, 100 * acc))
-		
+
 		return acc
 
 	def train_model(self):
@@ -257,7 +263,7 @@ class Trainer(object):
 					if i % self.args.print_every == 0:
 						self.logger.log.info("Epoch: [{}/{}], Step: [{}/{}], Loss: {:.4f}"
 							.format(epoch, self.training_epochs, i, num_steps, loss))
-				
+
 				self.scheduler.step()
 				# Check validation accuracy every epoch
 
@@ -284,5 +290,3 @@ class Trainer(object):
 			self.test_acc = self.check_accuracy(self.test_loader, self.model)
 			self.checkpoint(name, package['epoch'], self.test_acc, 'best.tar')
 			return self.test_acc, self.model, best_path
-		
-	

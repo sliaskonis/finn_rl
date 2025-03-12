@@ -39,6 +39,9 @@ from ..exporter.Exporter import (
 
 from ..utils import measure_model
 
+# Global variable
+count_reward = 0
+
 platform_path = './platforms'
 platform_files = {
     'U250': f'{platform_path}/u250.json',
@@ -373,58 +376,103 @@ class ModelEnv(gym.Env):
 		return done, info
 
 	
-	def reward(self, acc, avg_util, max_util, available_resources, resources_total):
+	def reward(self, acc, avg_util, max_util, available_resources, resources_total, print_info=True):
         # reward should be within [-1, 1]
-		acc_weighted = (acc * 0.02 - 1.0)
-		acc_weight = 0.25
-		if resources_total['BRAM_18K'] == 0:
-			resources_BRAM = 0
-			weight_BRAM = 0
-		else:
-			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_resources['BRAM_18K'])) / available_resources['BRAM_18K'] - 1
-			weight_BRAM = 0.25
-		if resources_total['LUT'] == 0:
-			resources_LUT = 0
-			weight_LUT = 0
-		else:
-			resources_LUT = (2 * (-resources_total['LUT'] + available_resources['LUT'])) / available_resources['LUT'] - 1
-			weight_LUT = 0.25
-		if resources_total['DSP'] == 0:
-			resources_DSP = 0
-			weight_DSP = 0
-		else:
-			resources_DSP = (2 * (-resources_total['DSP'] + available_resources['DSP'])) / available_resources['DSP'] - 1
-			weight_DSP = 0.25
 
-		print(f"BRAM TOTAL: {resources_total['BRAM_18K']}")
-		print(f"LUT TOTAL: {resources_total['LUT']}")
-		print(f"DSP TOTAL: {resources_total['DSP']}")
+		# count_reward += 1
 
-		print(f"BRAM USED: {available_resources['BRAM_18K']}")
-		print(f"LUT USED: {available_resources['LUT']}")
-		print(f"DSP USED: {available_resources['DSP']}")
+		# if count_reward == 1:
 
-		print(f"BRAM: {weight_BRAM * resources_BRAM}")
-		print(f"LUT: {weight_LUT * resources_LUT}")
-		print(f"DSP: {weight_DSP * resources_DSP}")
-		print(f"Acc: {acc_weight * acc_weighted}")
-		print(f"Reward: {acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP}")
+
+		# The weight of the accuracy in the reward function should be 25%
+		acc_weighted = (acc * 0.02 - 1.0) # Normalize accuracy to [-1, 1]
+		acc_weight = 0.25 # 25% of the reward
+
+		bram_util = resources_total['BRAM_18K'] / available_resources['BRAM_18K']
+		lut_util = resources_total['LUT'] / available_resources['LUT']
+		dsp_util = resources_total['DSP'] / available_resources['DSP']
+
+		# Check which of the components have the bigger usage
+		if bram_util >= lut_util and bram_util >= dsp_util:
+			# BRAM is the most utilized resource
+			if lut_util >= dsp_util:
+				# LUT is the second most utilized resource
+				weight_BRAM = 0.35
+				weight_LUT = 0.25
+				weight_DSP = 0.15
+			else:
+				# DSP is the second most utilized resource
+				weight_BRAM = 0.35
+				weight_LUT = 0.15
+				weight_DSP = 0.25
+		elif lut_util >= bram_util and lut_util >= dsp_util:
+			# LUT is the most utilized resource
+			if bram_util >= dsp_util:
+				# BRAM is the second most utilized resource
+				weight_LUT = 0.35
+				weight_BRAM = 0.25
+				weight_DSP = 0.15
+			else:
+				# DSP is the second most utilized resource
+				weight_LUT = 0.35
+				weight_BRAM = 0.15
+				weight_DSP = 0.25
+		else:
+			# DSP is the most utilized resource
+			if bram_util >= lut_util:
+				# BRAM is the second most utilized resource
+				weight_DSP = 0.35
+				weight_BRAM = 0.25
+				weight_LUT = 0.15
+			else:
+				# LUT is the second most utilized resource
+				weight_DSP = 0.35
+				weight_BRAM = 0.15
+				weight_LUT = 0.25
 		
-		if weight_BRAM == 0:
-			weight_LUT += 0.125
-			weight_DSP += 0.125
-		elif weight_DSP == 0:
-			weight_LUT += 0.125
-			weight_BRAM += 0.125
-		elif weight_BRAM == 0 and weight_DSP == 0:
-			weight_LUT += 0.25
+		# Calculate the reward components
+		if resources_total['BRAM_18K'] != 0:
+			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_resources['BRAM_18K'])) / available_resources['BRAM_18K'] - 1
+		else:
+			resources_BRAM = 1.0
+		if resources_total['LUT'] != 0:
+			resources_LUT = (2 * (-resources_total['LUT'] + available_resources['LUT'])) / available_resources['LUT'] - 1
+		else:
+			resources_LUT = 1.0
+		if resources_total['DSP'] != 0:
+			resources_DSP = (2 * (-resources_total['DSP'] + available_resources['DSP'])) / available_resources['DSP'] - 1
+		else:
+			resources_DSP = 1.0
+		
+		# if weight_BRAM == 0:
+		# 	weight_LUT += 0.125
+		# 	weight_DSP += 0.125
+		# elif weight_DSP == 0:
+		# 	weight_LUT += 0.125
+		# 	weight_BRAM += 0.125
+		# elif weight_BRAM == 0 and weight_DSP == 0:
+		# 	weight_LUT += 0.25
 
 		reward = acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP
 
-		# assign the previous resources to the global variables
-		previous_resources_BRAM = resources_BRAM
-		previous_resources_LUT = resources_LUT
-		previous_resources_DSP = resources_DSP
+		# Print out the reward components
+		if(print_info):
+			print("\033[91m================USED RESOURCES================\033[0m")
+			print(f"\033[91mBRAM USED: {resources_total['BRAM_18K']}\033[0m")
+			print(f"\033[91mLUT USED: {resources_total['LUT']}\033[0m")
+			print(f"\033[91mDSP USED: {resources_total['DSP']}\033[0m")
+
+			print("\033[92m================AVAILABLE RESOURCES================\033[0m")
+			print(f"\033[92mBRAM AVAILABLE: {available_resources['BRAM_18K']}\033[0m")
+			print(f"\033[92mLUT AVAILABLE: {available_resources['LUT']}\033[0m")
+			print(f"\033[92mDSP AVAILABLE: {available_resources['DSP']}\033[0m")
+
+			print("\033[94m================REWARD COMPONENTS================\033[0m")
+			print(f"\033[94mBRAM: {weight_BRAM * resources_BRAM}\033[0m")
+			print(f"\033[94mLUT: {weight_LUT * resources_LUT}\033[0m")
+			print(f"\033[94mDSP: {weight_DSP * resources_DSP}\033[0m")
+			print(f"\033[94mAcc: {acc_weight * acc_weighted}\033[0m")
+			print(f"\033[94mReward: {acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP}\033[0m")
 
 		return reward
 

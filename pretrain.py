@@ -2,7 +2,7 @@ import random
 import torch
 import argparse
 from pretrain.trainer import Trainer
-from pretrain.utils import get_model_config
+from pretrain.utils import str2bool
 
 parser = argparse.ArgumentParser(description = 'Pretraining model parameters')
 
@@ -14,12 +14,12 @@ parser.add_argument('--resume-from', default = None, help = 'If resume-from is n
 
 # Dataset Parameters
 parser.add_argument('--datadir', default = './data', help='Directory where datasets are stored (default: ./data)')
-parser.add_argument('--dataset', default = 'CIFAR10', choices = ['MNIST', 'CIFAR10'], help = 'Name of dataset (default: CIFAR10)')
+parser.add_argument('--dataset', default = 'CIFAR10', choices = ['MNIST', 'CIFAR10', 'FashionMNIST'], help = 'Name of dataset (default: CIFAR10)')
 parser.add_argument('--batch-size-training', default = 128, type = int, help = 'Batch size for training (default: 128)')
 parser.add_argument('--batch-size-validation', default = 64, type = int, help = 'Batch size for validation (default: 64)')
 parser.add_argument('--num-workers', default = 8, type = int, help = 'Num workers (default: 8)')
 parser.add_argument('--validation-split', default = 0.2, type = float, help = 'Training-Validation split (default: 0.2)')
-
+parser.add_argument("--transformations", type=str2bool, nargs='?', const=True, default=False, help='Whether to use transformations (default: false)')
 # Trainer Parameters
 parser.add_argument('--training-epochs', type = int, default = 100, help = 'Training epochs (default: 100)')
 parser.add_argument('--save-dir', default = './checkpoints', help = 'Directory to save model and logs (default: ./checkpoints)')
@@ -53,8 +53,10 @@ def main():
 
     if args.device == 'GPU' and torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
+    elif args.device == 'mps' and torch.backends.mps.is_available():
+        torch.mps.manual_seed(args.seed)
 
-    trainer = Trainer(args, get_model_config(args.dataset))
+    trainer = Trainer(args)
     trainer.train_model()
 
 if __name__ == "__main__":

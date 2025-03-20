@@ -384,109 +384,35 @@ class ModelEnv(gym.Env):
 
 		# The weight of the accuracy in the reward function should be 25%
 		acc_weighted = (acc * 0.02 - 1.0) # Normalize accuracy to [-1, 1]
-		acc_weight = 0.25 # 25% of the reward
+		acc_weight = 0.5 # 50% of the reward
 		
-		# Define the global variables
-		global count_reward
-		global available_BRAMs
-		global available_LUTs
-		global available_DSPs
+		num_layers = len(self.strategy)
+		layers = self.strategy
+		avg_bitwidth = sum(layers) / num_layers	# Average bitwidth
+		bitwidth_weight = 0.5 # 50% of the reward
 		
-		count_reward += 1
-
-		if count_reward == 1:
-			available_BRAMs = resources_total['BRAM_18K']
-			available_LUTs = resources_total['LUT']
-			available_DSPs = resources_total['DSP']
-
-			return acc_weighted
-
-		bram_util = resources_total['BRAM_18K'] / available_BRAMs
-		lut_util = resources_total['LUT'] / available_LUTs
-		dsp_util = resources_total['DSP'] / available_DSPs
-
-		# Check which of the components have the bigger usage
-		if bram_util >= lut_util and bram_util >= dsp_util:
-			# BRAM is the most utilized resource
-			if lut_util >= dsp_util:
-				# LUT is the second most utilized resource
-				weight_BRAM = 0.35
-				weight_LUT = 0.25
-				weight_DSP = 0.15
-			else:
-				# DSP is the second most utilized resource
-				weight_BRAM = 0.35
-				weight_LUT = 0.15
-				weight_DSP = 0.25
-		elif lut_util >= bram_util and lut_util >= dsp_util:
-			# LUT is the most utilized resource
-			if bram_util >= dsp_util:
-				# BRAM is the second most utilized resource
-				weight_LUT = 0.35
-				weight_BRAM = 0.25
-				weight_DSP = 0.15
-			else:
-				# DSP is the second most utilized resource
-				weight_LUT = 0.35
-				weight_BRAM = 0.15
-				weight_DSP = 0.25
-		else:
-			# DSP is the most utilized resource
-			if bram_util >= lut_util:
-				# BRAM is the second most utilized resource
-				weight_DSP = 0.35
-				weight_BRAM = 0.25
-				weight_LUT = 0.15
-			else:
-				# LUT is the second most utilized resource
-				weight_DSP = 0.35
-				weight_BRAM = 0.15
-				weight_LUT = 0.25
+		# Normalize the bitwidth to [-1, 1]
+		bitwidth_weighted = -2 * (avg_bitwidth - 1.0) / 7.0 + 1.0
+		reward = acc_weight * acc_weighted + bitwidth_weight * bitwidth_weighted
 		
-		# Calculate the reward components
-		if resources_total['BRAM_18K'] != 0:
-			resources_BRAM = (2 * (-resources_total['BRAM_18K'] + available_BRAMs)) / available_BRAMs - 1
-		else:
-			resources_BRAM = 1.0
-		if resources_total['LUT'] != 0:
-			resources_LUT = (2 * (-resources_total['LUT'] + available_LUTs)) / available_LUTs - 1
-		else:
-			resources_LUT = 1.0
-		if resources_total['DSP'] != 0:
-			resources_DSP = (2 * (-resources_total['DSP'] + available_DSPs)) / available_DSPs - 1
-		else:
-			resources_DSP = 1.0
-		
-		# if weight_BRAM == 0:
-		# 	weight_LUT += 0.125
-		# 	weight_DSP += 0.125
-		# elif weight_DSP == 0:
-		# 	weight_LUT += 0.125
-		# 	weight_BRAM += 0.125
-		# elif weight_BRAM == 0 and weight_DSP == 0:
-		# 	weight_LUT += 0.25
-
-		reward = acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP
-
 		# Print out the reward components
 		if(print_info):
-			print("\033[91m================USED RESOURCES================\033[0m")
-			print(f"\033[91mBRAM USED: {resources_total['BRAM_18K']}\033[0m")
-			print(f"\033[91mLUT USED: {resources_total['LUT']}\033[0m")
-			print(f"\033[91mDSP USED: {resources_total['DSP']}\033[0m")
-
-			print("\033[92m================AVAILABLE RESOURCES================\033[0m")
-			print(f"\033[92mBRAM AVAILABLE: {available_BRAMs}\033[0m")
-			print(f"\033[92mLUT AVAILABLE: {available_LUTs}\033[0m")
-			print(f"\033[92mDSP AVAILABLE: {available_DSPs}\033[0m")
-
-			print("\033[94m================REWARD COMPONENTS================\033[0m")
-			print(f"\033[94mBRAM: {weight_BRAM * resources_BRAM}\033[0m")
-			print(f"\033[94mLUT: {weight_LUT * resources_LUT}\033[0m")
-			print(f"\033[94mDSP: {weight_DSP * resources_DSP}\033[0m")
+			print("\033[91m================ BITWIDTH ================\033[0m")
+			colors = ["\033[91m", "\033[92m", "\033[94m"]
+			for i in range(len(layers)):
+				color = colors[i % 3]
+				print(f"{color}{i+1}th layer: {layers[i]}\033[0m")
+			print("\033[91m================ REWARD ================\033[0m")
 			print(f"\033[94mAcc: {acc_weight * acc_weighted}\033[0m")
-			print(f"\033[94mReward: {acc_weight * acc_weighted + weight_BRAM * resources_BRAM + weight_LUT * resources_LUT + weight_DSP * resources_DSP}\033[0m")
-
+			print(f"\033[92mBitwidth: {bitwidth_weight * bitwidth_weighted}\033[0m")
+			print(f"\033[93mAvg. Bitwidth: {avg_bitwidth}\033[0m")
+			print(f"\033[95mReward: {reward}\033[0m")
+		
+		# If the accuracy is less than 0, the reward should be negative
+		# Adding a costraint to the reward function if the accuracy
+		# drops to less than 50% of the original accuracy
+		if acc_weighted < 0:
+			return -1
 		return reward
 
 	def get_action(self, action):
